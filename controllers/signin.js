@@ -1,15 +1,7 @@
-const jwt = require("jsonwebtoken");
-const redis = require("redis");
+const JwtHooks = require("../hooks/jwt");
+const RedisHooks = require("../hooks/redis");
 
-const redisClient = redis.createClient({
-  url: process.env.REDIS_URI,
-});
-async function redisConnect() {
-  return await redisClient.connect();
-}
-redisConnect();
-
-const handleSignin = (db, bcrypt, req, res) => {
+const handleSignin = (db, bcrypt, req) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return Promise.reject("incorrect form submission");
@@ -31,43 +23,19 @@ const handleSignin = (db, bcrypt, req, res) => {
         Promise.reject("wrong credentials");
       }
     })
-    .catch((err) => Promise.reject("wrong credentials", err));
-};
-
-const getAuthTokenId = (req, res) => {
-  const { authorization } = req.headers;
-  return redisClient.get(authorization);
-};
-
-const signToken = (email) => {
-  const jwtPayload = { email };
-  return jwt.sign(jwtPayload, "JWT_SECRET", { expiresIn: "2 days" });
-};
-
-const setToken = (key, value) => {
-  return Promise.resolve(redisClient.set(key, value));
-};
-
-const createSessions = async (user) => {
-  const { email, id } = user;
-  const token = signToken(email);
-  return setToken(token, id)
-    .then(() => {
-      return { success: "true", userId: id, token };
-    })
-    .catch(console.log);
+    .catch((err) => Promise.reject("wrong credentials :", err));
 };
 
 const signinAuthentification = (db, bcrypt) => (req, res) => {
   const { authorization } = req.headers;
   return authorization
-    ? getAuthTokenId(req, res)
-        .then((session) => res.json(session))
+    ? RedisHooks.getAuthTokenId(req, res)
+        .then((sessionId) => res.json(sessionId))
         .catch((err) => res.status(400).json(err))
-    : handleSignin(db, bcrypt, req, res)
+    : handleSignin(db, bcrypt, req)
         .then((data) => {
           return data.id && data.email
-            ? createSessions(data)
+            ? JwtHooks.createSessions(data)
             : Promise.reject(data);
         })
         .then((session) => res.json(session))
